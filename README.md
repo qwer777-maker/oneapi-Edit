@@ -17,6 +17,7 @@ one-api是非常好的项目，大大便利了key的分发使用。现在遇到�
 3、支持sse响应
 
 后续会添加在前端直接修改请求头。
+具体在`relay/adaptor/openai/adaptor.go`
 
 ### 环境安装 linuxamd64
 
@@ -78,5 +79,4 @@ chmod u+x one-api
 go build -ldflags "-s -w" -o one-api
 ./one-api --port 3000 --log-dir ./logs
 ```
-
 
