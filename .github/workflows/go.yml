@@ -22,6 +22,11 @@ jobs:
         go-version: '1.20'
 
     - name: Build
+      run: echo "export PATH=$PATH:/usr/local/go/bin" >> ~/.bashrc
+      run: echo "export CGO_ENABLED=1" >> ~/.bashrc
+      run: source ~/.bashrc 
+      run: apt install build-essential
+      run: go env -w CGO_ENABLED=1
       run: go build -v ./...
 
     - name: Test
