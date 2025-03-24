@@ -1,33 +1,166 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
-name: Go
+name: Test
 
 on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "env"
+        required: true
+        default: "production"
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+      
+
+permissions:
+  contents: read
 
 jobs:
-
-  build:
-    runs-on: ubuntu-22.04
+  test-environment:
+    runs-on:
+      labels:
+        - runs-on
+        - runner=2cpu-linux-x64
+        - tag=env-test-protected
+        - env=${{ inputs.env || 'production' }}
+    environment:
+      name: test
+      url: https://protected.example.com
+    timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - run: echo Hello world
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.20'
+  test-environment-no-protection:
+    runs-on:
+      labels:
+        - runs-on
+        - runner=2cpu-linux-x64
+        - tag=env-test-no-protection
+        - env=${{ inputs.env || 'production' }}
+    environment:
+      name: test-no-protection
+      url: https://not-protected.example.com
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo Hello world
 
-    - name: Build
-      run: echo "export PATH=$PATH:/usr/local/go/bin" >> ~/.bashrc
-      run: echo "export CGO_ENABLED=1" >> ~/.bashrc
-      run: source ~/.bashrc 
-      run: apt install build-essential
-      run: go env -w CGO_ENABLED=1
-      run: go build -v ./...
+  test-preinstall-ok:
+    runs-on: runs-on,runner=preinstall-ok,env=${{ inputs.env || 'production' }}
+    steps:
+      - run: echo Hello world
+      - name: Ensure custom tags are present
+        run: |
+          TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+          # Get list of tag keys
+          curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/tags/instance > tag_keys.txt
+          echo "---" >> tags.txt
+          # Get values for each key
+          while read key; do
+            value=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/tags/instance/$key)
+            echo "$key=$value" >> tags.txt
+          done < tag_keys.txt
+          echo "---" >> tags.txt
+          cat tags.txt
+          sleep 1
+          set -x
+          # runner tags
+          grep "tag-custom-key1" tags.txt | grep "tag-custom-value1"
+          # tag without values are only present as keys
+          grep "tag-custom-key2-no-value" tag_keys.txt
+          grep -q -v "tag-custom-key2-no-value" tags.txt
 
-    - name: Test
-      run: go test -v ./...
+  test-ssd-mount:
+    runs-on: runs-on,runner=2cpu-linux-arm64,family=c7gd,env=${{ inputs.env || 'production' }}
+    steps:
+      - name: Show disk setup
+        run: |
+          sudo lsblk -l
+          sudo df -ah
+      - name: Check SSD mount
+        run: sudo df -ah | grep /home/runner/_work | grep /dev/md0
+      - name: Ensure checkout can be done
+        uses: actions/checkout@v4
+
+  test-metal:
+    runs-on: runs-on,family=c7g.metal,image=ubuntu22-full-arm64,env=${{ inputs.env || 'production' }}
+    steps:
+      - run: echo Hello world
+
+  test-gpu:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - runs-on=${{ github.run_id }},runner=gpu-nvidia
+          - runs-on=${{ github.run_id }},family=g4dn.xlarge,image=ubuntu22-gpu-x64
+          - runs-on=${{ github.run_id }},family=g4dn.xlarge,image=ubuntu24-gpu-x64
+    runs-on:
+      - ${{ matrix.runner }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Display environment details
+        run: npx envinfo
+      - name: Display block storage
+        run: sudo lsblk -l
+      - name: Display NVIDIA SMI details
+        run: |
+          nvidia-smi
+          nvidia-smi -L
+          nvidia-smi -q -d Memory
+      - name: Ensure Docker is available with GPU support
+        run: docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+      - name: Execute your machine learning script
+        run: echo "Running ML script..."
+
+  test-windows:
+    runs-on: runs-on=${{github.run_id}}/family=m7i/image=windows22-base-x64/env=${{ inputs.env || 'production' }}/private=false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check disk usage for windows
+        run: |
+          dir .
+          echo $env:USERNAME
+          echo $env:RUNS_ON_RUNNER_NAME
+          fsutil fsinfo drives
+          fsutil fsinfo statistics
+          Get-WmiObject -Class Win32_LogicalDisk -ComputerName LOCALHOST | ? {$_. DriveType -eq 3} | select DeviceID, {[int]($_.Size /1GB)}, {[int]($_.FreeSpace /1GB)}
+
+  test-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - runs-on,runner=2cpu-linux-x64
+          - runs-on,runner=4cpu-linux-x64
+          - runs-on,runner=gofast,image=custom
+          - runs-on,runner=gofast,cpu=1,hdd=41
+          - runs-on,runner=1cpu-linux-arm64,image=ubuntu22-base-arm64
+          - runs-on,runner=2cpu-linux-arm64,image=ubuntu22-full-arm64
+          - runs-on,runner=2cpu-linux-arm64,ssh=false
+          - runs-on=${{ github.run_id }}/runner=2cpu-linux-arm64,disk=large
+    runs-on:
+      labels:
+        - ${{ matrix.runner }}
+        - env=${{ inputs.env || 'production' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Disk usage
+        run: df -ah
+      - name: Check preinstall
+        run: test -f /tmp/preinstalled || echo "Preinstall not found"
+      - name: Setup
+        run: |
+          sudo apt-get update -qq && sudo apt-get install build-essential -y
+          # source RUNS_ON env vars
+          . /etc/environment
+          curl https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-$RUNS_ON_AGENT_ARCH.tar.gz | sudo tar -xzf - -C /usr/local --strip-components=1
+      - name: Environment Information
+        run: npx envinfo
