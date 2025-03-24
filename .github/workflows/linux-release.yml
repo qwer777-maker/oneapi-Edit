@@ -36,7 +36,7 @@ jobs:
           CI: ""
         run: |
           cd web
-          git describe --tags > VERSION
+          echo "v1.1" > VERSION
           REACT_APP_VERSION=$(git describe --tags) chmod u+x ./build.sh && ./build.sh
           cd ..
       - name: Set up Go
