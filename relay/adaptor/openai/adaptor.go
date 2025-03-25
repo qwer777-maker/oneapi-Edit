@@ -74,6 +74,7 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, meta *me
 	}
 	req.Header.Set("Authorization", "Bearer "+meta.APIKey)
 	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("Type", "coder")
 
 	err := godotenv.Load()
     if err != nil {
