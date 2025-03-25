@@ -39,6 +39,7 @@ jobs:
           echo "v1.1" > VERSION
           REACT_APP_VERSION="v1.1" chmod u+x ./build.sh && ./build.sh
           cd ..
+          7z a -tzip bin.zip web/*
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
@@ -47,13 +48,14 @@ jobs:
         run: |
           go mod download
           go build -ldflags "-s -w -X 'github.com/songquanpeng/one-api/common.Version=$(git describe --tags)' -extldflags '-static'" -o one-api
-
+          7z a -tzip bin1.zip one-api
+          
       - name: Build Backend (arm64)
         run: |
           sudo apt-get update
           sudo apt-get install gcc-aarch64-linux-gnu
           CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X 'one-api/common.Version=$(git describe --tags)' -extldflags '-static'" -o one-api-arm64
-
+          7z a -tzip bin2.zip one-api-arm64
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -65,3 +67,14 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+      # 上传文件
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          # Artifact name
+          name: bin
+          # A file, directory or wildcard pattern that describes what to upload
+          path: "bin.zip"
